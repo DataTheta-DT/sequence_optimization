@@ -1,0 +1,6 @@
+sku_id,product_name,family,sub_family,allergen,pkg_format,prod_rate_kg_hr,min_lot_kg
+SKU001,KitKat 2 Finger,Confectionery,Wafer Chocolate,1,Wrapper,600,300
+SKU002,KitKat 4 Finger,Confectionery,Wafer Chocolate,1,Wrapper,580,300
+SKU003,KitKat Sharebag,Confectionery,Wafer Chocolate,1,Pouch,520,400
+SKU004,Munch,Confectionery,Wafer Chocolate,1,Wrapper,620,300
+SKU005,Munch Max,Confectionery,Wafer Chocolate,1,Wrapper,600,300

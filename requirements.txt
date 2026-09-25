@@ -1,0 +1,16 @@
+# Production Sequencing Optimizer - dependencies
+#
+# ortools and pyyaml are NOT preinstalled on standard Databricks Runtime
+# clusters and must be installed. On Databricks, either:
+#   %pip install -r requirements.txt
+# in the first notebook cell, or install as a cluster-scoped library.
+#
+# pandas and pyspark are already present on every Databricks Runtime cluster
+# and are listed here only so the project also runs standalone (e.g. in the
+# tests/ suite, or any plain Python environment) without extra setup.
+
+ortools>=9.10,<10.0
+pandas>=1.5.0
+pyyaml>=6.0
+pyspark>=3.4.0
+pytest>=7.0.0

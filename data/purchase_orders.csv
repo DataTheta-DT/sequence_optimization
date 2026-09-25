@@ -1,0 +1,5 @@
+po_number,product_name,quantity_kg,deadline,location,amount
+PO2026-0003,KitKat 2 Finger,1200,25-09-2026,Hyderabad,563200
+PO2026-0005,KitKat Sharebag,2150,25-09-2026,Pune,713700
+PO2026-0007,Munch Max,2900,26-09-2026,Bengaluru,1245500
+PO2026-0010,KitKat 4 Finger,3150,05-10-2026,Delhi,1185600

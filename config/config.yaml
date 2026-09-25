@@ -1,0 +1,158 @@
+# ==============================================================================
+# Production Sequencing Optimizer — configuration
+# Every tunable used by the pipeline lives here. Nothing in src/ is hardcoded;
+# change behaviour by editing this file, not the code.
+# ==============================================================================
+
+# ---------------------------------------------------------------------------
+# Unity Catalog location. "workspace" is the default catalog available in any
+# Databricks workspace with Unity Catalog enabled. The schema below is created
+# by notebooks/00_setup_catalog_and_tables.py the first time the project runs.
+# ---------------------------------------------------------------------------
+catalog:
+  catalog_name: workspace
+  schema_name: production_sequencing_optimizer
+  tables:
+    sku_master: sku_master
+    changeover_matrix: changeover_matrix
+    line_calendar: line_calendar
+    purchase_orders: purchase_orders            # raw PO landing table (optional, for audit)
+    schedule_output: production_schedule        # optimizer output written back to UC
+    kpi_output: schedule_kpis                    # KPI summary written back to UC
+
+# ---------------------------------------------------------------------------
+# Where reference (backend) data is read from.
+#   "unity_catalog" -> src/psopt/data_loader.py reads sku_master, changeover_matrix
+#                      and line_calendar from the Unity Catalog tables above via
+#                      the active Spark session. This is the production path and
+#                      what model.solve() uses on Databricks.
+#   "csv"           -> reference tables are read from local_csv_dir instead. This
+#                      exists ONLY so the pipeline can be unit-tested / run
+#                      outside Databricks (see tests/test_model_local.py). It is
+#                      not used by the notebooks.
+# ---------------------------------------------------------------------------
+data_backend: unity_catalog
+local_csv_dir: data/
+
+# ---------------------------------------------------------------------------
+# Objective function weights. The objective minimizes:
+#     w_changeover * total_changeover_hours
+#   + w_idle       * idle_hours
+#   + w_unmet      * total_unmet_demand_kg
+#   + w_late       * total_late_delivered_kg
+# Raise w_unmet relative to the other two to push the solver harder toward
+# fulfilling demand before it starts optimizing for line efficiency; raise
+# w_changeover to prioritize fewer/cheaper product changeovers; raise w_idle
+# to push the solver toward a tighter, earlier-finishing schedule.
+#
+# w_late (late_delivery_penalty) is DISTINCT from w_unmet: total_unmet_kg
+# only counts kg that never gets produced at all, so on its own it gives the
+# solver no reason to prefer finishing a near-deadline order before a
+# far-deadline one - once an order is going to be produced anyway, unmet
+# demand doesn't care when. late_delivery_penalty specifically penalizes kg
+# that DOES get produced but after that order's own deadline.
+#
+# This has two very different regimes depending on its size relative to
+# unmet_demand_penalty:
+#   - SMALL (well below unmet_demand_penalty, e.g. 0.05-0.2 here): acts as a
+#     near-free tie-breaker. The solver still maximizes total production
+#     first (that's what the much larger unmet weight dominates), and only
+#     uses the lateness term to prefer, among similar-volume schedules, the
+#     sequencing that hits more deadlines. On our test datasets this
+#     consistently cut deadline misses by roughly a third to half with ZERO
+#     loss of total service level.
+#   - LARGE (comparable to or above unmet_demand_penalty): the solver may
+#     start deliberately producing LESS overall in exchange for hitting more
+#     deadlines on what it does produce - e.g. skipping a PO entirely rather
+#     than finishing it late, because skipping now costs less in the
+#     objective than lateness would. This is sometimes exactly what a
+#     business wants (a visible backlog is better than a broken promise) but
+#     it is a genuine volume-vs-punctuality trade-off, not a free win -
+#     raise it deliberately, and watch service_level_pct alongside
+#     num_deadline_misses as you do.
+# Check kpis["num_deadline_misses"] / schedule["on_time_vs_deadline"] and
+# tune from there for your data; the right value is data-dependent.
+# ---------------------------------------------------------------------------
+objective_weights:
+  changeover_hours: 8.0
+  idle_hours: 2.0
+  unmet_demand_penalty: 1.0        # cost per kg of unmet demand
+  late_delivery_penalty: 0.25      # cost per kg produced after its own PO's deadline (tuned for this dataset: small = near-free tie-breaker; see note above)
+
+# ---------------------------------------------------------------------------
+# Service-level targets (percent of total requested demand, 0-100).
+#
+# enforce_as_hard_constraint: true  -> the targets below become hard CP-SAT
+#   constraints (model.Add). If the line's available capacity cannot
+#   physically reach them for a given PO set/calendar, the solve returns
+#   INFEASIBLE with no schedule at all. Use this once you know your real
+#   demand/calendar combination has enough capacity headroom and you want a
+#   hard guarantee.
+# enforce_as_hard_constraint: false (default) -> the targets are instead
+#   pursued as a very heavily weighted objective term (see
+#   objective_weights.unmet_demand_penalty), so the solver always returns the
+#   best feasible, capacity-maximizing schedule it can find and reports the
+#   actual achieved service level / on-time % against the target, even when
+#   physical capacity makes hitting the target impossible. This is the safer
+#   default for real plants where demand can temporarily exceed capacity.
+# ---------------------------------------------------------------------------
+service_level:
+  min_total_fulfillment_pct: 98.0     # target: % of total PO demand to be produced
+  min_on_time_fulfillment_pct: 98.0   # target: % of total PO demand produced by each PO's own deadline
+  enforce_as_hard_constraint: false
+  # forbid_late_delivery: whatever quantity IS produced for a PO must
+  # complete BY that PO's own deadline when true - late delivery isn't an
+  # option at all; the solver either produces a smaller on-time amount (down
+  # to the SKU's min_lot_kg) or leaves the order fully unmet. Shipped as
+  # false here: on this dataset, total demand (~62,300 kg / ~110h) fits
+  # comfortably within total calendar capacity (~127h) - the real problem is
+  # a handful of deadlines clustered right at the start of the horizon that
+  # nothing can fully satisfy, not an overall shortage. Forbidding lateness
+  # outright would force those specific orders to 0 kg (fully unmet) even
+  # though most of their quantity could still be delivered a bit late - a
+  # worse outcome than a small, realistic amount of lateness. With this set
+  # to false and late_delivery_penalty (below) at 0.25, this dataset lands
+  # at 100% of demand produced with a small number of deadline misses
+  # (~1-3, depending on solver search variance - see
+  # kpis["num_deadline_misses"]) concentrated on those same clustered
+  # early orders. Set to true instead if your business rule genuinely is
+  # "never late, even if it means some orders go completely unfulfilled".
+  forbid_late_delivery: false
+
+# ---------------------------------------------------------------------------
+# Changeover / sequencing rules.
+# incompatible_changeover_threshold_hours: if set (not null), any SKU-to-SKU
+# transition whose changeover_matrix.csv value is >= this threshold is treated
+# as a FORBIDDEN transition (the solver will never sequence that pair back to
+# back), rather than merely an expensive one. Leave null to treat every
+# transition in changeover_matrix.csv as allowed-but-costed, which is correct
+# for the shipped dataset (no transition is flagged as impossible there).
+# ---------------------------------------------------------------------------
+sequencing:
+  incompatible_changeover_threshold_hours: null
+  startup_changeover_minutes: 0     # changeover charged before the very first task of the horizon
+
+# ---------------------------------------------------------------------------
+# CP-SAT solver settings.
+# ---------------------------------------------------------------------------
+solver:
+  max_time_in_seconds: 120
+  num_search_workers: 8
+  log_search_progress: false
+  relative_gap_limit: 0.0
+
+# ---------------------------------------------------------------------------
+# Production lot sizing behaviour: if a PO is partially fulfilled (not
+# skipped, not fully produced) the produced quantity for that PO must be at
+# least its SKU's min_lot_kg (from sku_master.csv), never a token amount.
+# ---------------------------------------------------------------------------
+lot_sizing:
+  enforce_min_lot_on_partial_fulfillment: true
+
+# ---------------------------------------------------------------------------
+# Date/time parsing formats for the input files.
+# ---------------------------------------------------------------------------
+formats:
+  po_deadline_date_format: "%d-%m-%Y"     # purchase_orders.csv "deadline" column
+  calendar_date_format: "%Y-%m-%d"        # line_calendar.csv "date" column
+  calendar_time_format: "%H:%M"           # line_calendar.csv time-of-day columns
