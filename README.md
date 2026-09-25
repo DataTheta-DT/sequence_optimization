@@ -15,7 +15,7 @@ outputs/         HTML report written by notebook 02
 requirements.txt
 ```
 
-Inside `src/psopt`: `config` (loads `config.yaml`), `data_loader` (resolves reference data from Unity Catalog or CSV), `model` (CP-SAT), `postprocess` (schedule + KPI tables), `validation` (EDD baseline for sanity-checking), `report` (self-contained HTML report), `catalog_setup` (one-time Unity Catalog setup), `utils` (calendar compression, date parsing).
+Inside `src/psopt`: `config` (loads `config.yaml`), `data_loader` (resolves reference data from Unity Catalog or CSV), `model` (CP-SAT), `postprocess` (schedule + KPI tables), `report` (self-contained HTML report), `catalog_setup` (one-time Unity Catalog setup), `utils` (calendar compression, date parsing).
 
 ## Input files
 
