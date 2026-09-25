@@ -86,11 +86,11 @@ All of these live in `config/config.yaml` and can be changed without touching an
 - Works on classic clusters and Serverless compute
 
 ## Sources
-
+ 
 | library | licence | source |
 |---|---|---|
-| OR-Tools (CP-SAT) | Apache 2.0 | github.com/google/or-tools |
-| Apache Spark / PySpark | Apache 2.0 | github.com/apache/spark |
-| Delta Lake | Apache 2.0 | github.com/delta-io/delta |
-| pandas | BSD-3-Clause | github.com/pandas-dev/pandas |
-| PyYAML | MIT | github.com/yaml/pyyaml |
+| OR-Tools (CP-SAT) | Apache 2.0 | [github.com/google/or-tools](https://github.com/google/or-tools) |
+| Apache Spark / PySpark | Apache 2.0 | [github.com/apache/spark](https://github.com/apache/spark) |
+| Delta Lake | Apache 2.0 | [github.com/delta-io/delta](https://github.com/delta-io/delta) |
+| pandas | BSD-3-Clause | [github.com/pandas-dev/pandas](https://github.com/pandas-dev/pandas) |
+| PyYAML | MIT | [github.com/yaml/pyyaml](https://github.com/yaml/pyyaml) |
